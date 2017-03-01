@@ -1,0 +1,212 @@
+const chai = require ('chai');
+const chaiHttp = require ('require-http');
+const faker = require('faker');
+const mongoose = require('mongoose');
+
+const should = chai.should();
+
+const {BlogPost} = require('../models.js');
+const {runServer, closeServer, app} = require('../server.js'); 
+const {TEST_DATABASE_URL} = require('../config.js');
+
+chai.use(chaiHttp);
+
+
+function seedPostData(){
+	console.log('seeding post data into the db');
+	const seedData= []
+
+	for (let i= 0; i<10; i++){
+		seedData.push(seedPostData());
+	}
+	return Restaurant.insertMany(seedData);
+}
+
+function generateTitleData(){
+	const  titles = ['this book review', 'that blog post on philo', 'another trump argument', 'how to be a fast cyclist'];
+	return titles[Math.floor(Math.random() * titles.length)];
+}
+
+function generateContentsData(){
+	const contents = [
+	'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas ultrices maximus gravida. Nulla id elit quis justo hendrerit ultricies. Praesent nec lobortis lectus, quis sollicitudin ex',
+	'Suspendisse at justo tincidunt dui euismod dictum. Donec felis sapien, tempor vitae risus eget, faucibus pharetra odio. Pellentesque eros tellus, fermentum vitae orci at, maximus condimentum est.',
+	'Integer sit amet placerat ex, ac convallis mauris. Maecenas auctor ultricies orci a blandit.',
+	'Pellentesque tempus libero risus, quis venenatis metus viverra quis. Aliquam at auctor erat. Ut eget cursus diam'
+	];
+	return contents[Math.floor(Math.random() * contents.length)];
+}
+
+function generateAuthorsData(){
+	const authors = ['Susan Sontag', 'Gertrude Stein', 'Rita Mae Brown', 'Annie Proulx'];
+	return authors[Math.floor(Math.random()*authors.length)];
+}
+
+function generateIDsData(){
+	const IDs = ['1234', '4565546645', '23423523424', '34f434h53f'];
+	return IDs[Math.floors(Math.random()*authors.length)];
+}
+
+function generatePostData(){
+ 	return {
+ 		id: generateIDsData();
+ 		author: generateAuthorsData(),
+ 		content: generateContentsData(),
+ 		title: generateTitleData(),
+ 		created: faker.date.past()
+ 	};
+}
+
+
+function tearDownDb(){
+	 console.warn('deleting database');
+	 return mongoose.connection.dropDatabase();
+}
+
+
+
+
+describe('Blog API resource', function(){
+
+
+	before(function(){
+		return runServer(TEST_DATABASE_URL);
+	});
+
+	beforeEach(function(){
+		return seedPostData();
+	});
+
+	afterEach(function(){
+		return tearDownDb();
+	});
+
+	after(function(){
+		return closeServer();
+	});
+
+
+	describe('Get Endpoint', function(){
+		it('should return all blogPosts', function(){
+
+			let res;
+			return chai.request(app);
+			.get('/BlogPosts')
+			.then(function(_res){
+				res = _res;
+				res.should.have.status(200);
+				res.should.be.a('object');
+				res.should.be.json;
+				res.should.have.length.of.at.least(1);
+			});
+			.then(function(count){
+				res.body.blogPost.should.have.length.of(count);
+			});
+
+		
+		});
+		it('should have all the correct db fields', function(){
+			let resBlogPost;
+			return chai.request(app);
+			.get('BlogPosts')
+			.then(function(res){
+				res.should.have.status(200);
+				res.should.be.a('array');
+				res.should.be.json;
+				res.body.BlogPost.forEach(function(blogPost){
+					blogPost.should.be.a('object');
+					blogPost.should.include.keys('id', 'title', 'content', 'author', 'created');
+				});
+				resBlogPost = res.body.blogPosts[0];
+				return blogPosts.findById(resBlogPost.id);
+			});
+			.then(function(blogPost){
+				resBlogPost.id.should.equal(blogPost.id);
+				resBlogPost.title.should.equal(blogPost.title);
+				resBlogPost.content.should.equal(blogPost.content);
+				resBlogPost.author.should.equal(blogPost.author);
+				resBlogPost.created.should.equal(blogPost.created);
+			});
+		});
+	});
+	describe('POST endpoint', function(){
+		it('should add a new blogPost', function(){
+			const newBlogPost = generatePostData();
+			return chai.request(app);
+			.post('/BlogPosts')
+			.send(newBlogPost)
+			.then(function(res){
+				res.should.have.status(200);
+				res.body.should.be.a('object');
+				res.should.be.json;
+				res.body.should.include.keys('id', 'title', 'content', 'author', 'created');
+				res.body.id.should.not.be.null;
+				res.body.id.should.equal(newBlogPost.id);
+				res.body.title.should.equal(newBlogPost.title);
+				res.body.content.should.equal(newBlogPost.content);
+				res.body.author.should.equal(newBlogPost.author);
+				res.body.created.should.equal(newBlogPost.created);
+				return BlogPost.findById(res.body.id);
+
+			});
+			.then(function(blogPost){
+				blogPost.id.shoud.equal(newBlogPost.id);
+				blogPost.title.should.equal(newBlogPost.title);
+				blogPost.content.should.equal(newBlogPost.content);
+				blogPost.author.should.equal(newBlogPost.author);
+				blogPost.created.should.equal(newBlogPost.created);
+			});
+		});
+	});
+	describe('PUT endpoint', function(){
+		it('should update the content of the blogPost', function(){
+			const updateData = {
+				title: 'this new title which sounds great',
+				content: 'all of this info you are ready and willing to read',
+				author: 'some dude'
+			};
+			return BlogPost
+			.findOne()
+			.exec()
+			.then(function(blogPost){
+				updateData.id = blogPost.id;
+				return chai.request(app);
+				.put(`/blogPosts:${blogPost.id}`)
+				.send(updateData);
+			})
+			.then(function(res){
+				res.should.have.a.status(204);
+				return BlogPost.findById(updateData.id).exec();
+			});
+			.then(function(blogPost){
+				blogPost.title.should.equal(updateData.title);
+				blogPost.content.should.equal(updateData.content);
+				blogPost.author.should.equal(updateData.author);
+			});
+		});
+	});
+	describe('Delete endpoint', function(){
+		it('should delete the requested ID and parameters associated', function(){
+			let blogPost;
+
+			return BlogPost
+			.findOne()
+			.exec()
+			.then(function(_blogPost){
+				blogPost = _blogPost;
+				return chai.request(app).delete(`/blogPosts:${blogPost.id}`);
+			})
+			.then(function(res){
+				res.should.have.status(204);
+				return BlogPost.findById(blogPost.id).exec();
+			});
+			.then(function(_blogPost){
+				should.not.exist(_blogPost);
+			});
+
+		});
+	});
+
+
+
+});
